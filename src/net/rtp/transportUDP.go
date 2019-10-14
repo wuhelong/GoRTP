@@ -53,13 +53,13 @@ func NewTransportUDP(addr *net.IPAddr, port int, zone string) (*TransportUDP, er
 func (tp *TransportUDP) ListenOnTransports() (err error) {
     tp.dataConn, err = net.ListenUDP(tp.localAddrRtp.Network(), tp.localAddrRtp)
     if err != nil {
-        return
+        return err
     }
     tp.ctrlConn, err = net.ListenUDP(tp.localAddrRtcp.Network(), tp.localAddrRtcp)
     if err != nil {
         tp.dataConn.Close()
         tp.dataConn = nil
-        return
+        return err
     }
     go tp.readDataPacket()
     go tp.readCtrlPacket()

@@ -136,5 +136,6 @@ func init() {
     // 35-71     Unassigned      ?
     // 72-76     Reserved for RTCP conflict avoidance
     // 77-95     Unassigned      ?
-    // 96-127    dynamic         ? 
+    // 96-127    dynamic         ?
+    PayloadFormatMap[96] = &PayloadFormat{96, Audio, 48000, 0, "Opus"}
 }

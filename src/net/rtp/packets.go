@@ -352,6 +352,11 @@ func (rp *DataPacket) Sequence() uint16 {
     return binary.BigEndian.Uint16(rp.buffer[sequenceOffset:])
 }
 
+// PayloadType return the payload type value from RTP packet header.
+func (rp *DataPacket) FromAddr() Address {
+    return rp.RawPacket.fromAddr
+}
+
 // ExtensionBit returns true if the Extension bit is set in the header, false otherwise.
 func (rp *DataPacket) ExtensionBit() bool {
     return (rp.buffer[0] & extensionBit) == extensionBit

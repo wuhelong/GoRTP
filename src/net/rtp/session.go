@@ -23,6 +23,7 @@ package rtp
  */
 
 import (
+    "bytes"
     "net"
     "sync"
     "time"
@@ -35,10 +36,11 @@ type Session struct {
     MaxNumberOutStreams int // Applications may set this to increase the number of supported output streams
     MaxNumberInStreams  int // Applications may set this to increase the number of supported input streams
 
-    dataReceiveChan DataReceiveChan
-    ctrlEventChan   CtrlEventChan
+    dataReceiveChan        DataReceiveChan
+    invalidDataReceiveChan DataReceiveChan
+    ctrlEventChan          CtrlEventChan
 
-    streamsMapMutex sync.Mutex // synchronize activities on stream maps 
+    streamsMapMutex sync.Mutex // synchronize activities on stream maps
     streamsOut      streamOutMap
     streamsIn       streamInMap
     remotes         remoteMap
@@ -169,9 +171,10 @@ func NewSession(tpw TransportWrite, tpr TransportRecv) *Session {
 //   remote - the RTP address of the remote peer. The RTP data port number must be even.
 //
 func (rs *Session) AddRemote(remote *Address) (index uint32, err error) {
-    if (remote.DataPort & 0x1) == 0x1 {
-        return 0, Error("RTP data port number is not an even number.")
-    }
+    //  The remote port cannot be determined due to network address translation
+    //    if (remote.DataPort & 0x1) == 0x1 {
+    //        return 0, Error("RTP data port number is not an even number.")
+    //    }
     rs.remotes[rs.remoteIndex] = remote
     index = rs.remoteIndex
     rs.remoteIndex++
@@ -314,6 +317,11 @@ func (rs *Session) CreateDataReceiveChan() DataReceiveChan {
     return rs.dataReceiveChan
 }
 
+func (rs *Session) CreateInvalidDataReceiveChan() DataReceiveChan {
+    rs.invalidDataReceiveChan = make(DataReceiveChan, dataReceiveChanLen)
+    return rs.invalidDataReceiveChan
+}
+
 // RemoveDataReceivedChan deletes the data received channel.
 //
 // The receiver discards all received packets.
@@ -427,7 +435,11 @@ func (rs *Session) ListenOnTransports() (err error) {
 func (rs *Session) OnRecvData(rp *DataPacket) bool {
 
     if !rp.IsValid() {
-        rp.FreePacket()
+        select {
+        case rs.invalidDataReceiveChan <- rp: // forwarded packet, that's all folks
+        default:
+            rp.FreePacket() // either channel full or not created - free packet
+        }
         return false
     }
     // Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
@@ -723,6 +735,24 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 
     // Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
     for _, remote := range rs.remotes {
+        _, err := rs.transportWrite.WriteDataTo(rp, remote)
+        if err != nil {
+            return 0, err
+        }
+    }
+    return n, nil
+}
+
+func (rs *Session) Forward(rp *DataPacket) (n int, err error) {
+    rs.weSent = true
+    //log.Println("Forward")
+    // Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
+    for _, remote := range rs.remotes {
+        //log.Println(remote)
+        if remote.DataPort == rp.RawPacket.fromAddr.DataPort && bytes.Equal(remote.IpAddr, rp.RawPacket.fromAddr.IpAddr) {
+            continue
+        }
+        //log.Println("send")
         _, err := rs.transportWrite.WriteDataTo(rp, remote)
         if err != nil {
             return 0, err
