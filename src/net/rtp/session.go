@@ -65,7 +65,7 @@ type Session struct {
 //
 // The transport implementations construct UDP or TCP addresses and use them to send the data.
 type Address struct {
-	IpAddr             net.IP
+	IPAddr             net.IP
 	DataPort, CtrlPort int
 	Zone               string
 }
@@ -178,6 +178,7 @@ func (rs *Session) AddRemote(remote *Address) (index uint32, err error) {
 	rs.remotes[rs.remoteIndex] = remote
 	index = rs.remoteIndex
 	rs.remoteIndex++
+
 	return
 }
 
@@ -204,10 +205,10 @@ func (rs *Session) RemoveRemote(index uint32) {
 //                to RFC 3550
 //
 func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (index uint32, err Error) {
-
 	if len(rs.streamsOut) > rs.MaxNumberOutStreams {
 		return 0, Error("Maximum number of output streams reached.")
 	}
+
 	str := newSsrcStreamOut(own, ssrc, sequenceNo)
 	str.streamStatus = active
 
@@ -222,6 +223,7 @@ func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16
 	rs.streamsOut[rs.streamOutIndex] = str
 	index = rs.streamOutIndex
 	rs.streamOutIndex++
+
 	return
 }
 
@@ -263,14 +265,15 @@ func (rs *Session) StartSession() (err error) {
 // closes the receiver transports,
 //
 func (rs *Session) CloseSession() {
-	if rs.rtcpServiceActive {
-		rs.rtcpCtrlChan <- rtcpStopService
-		for idx := range rs.streamsOut {
-			rs.SsrcStreamCloseForIndex(idx)
-		}
-		rs.CloseRecv() // de-activate the transports
+	if !rs.rtcpServiceActive {
+		return
 	}
-	return
+
+	rs.rtcpCtrlChan <- rtcpStopService
+	for idx := range rs.streamsOut {
+		rs.SsrcStreamCloseForIndex(idx)
+	}
+	rs.CloseRecv() // de-activate the transports
 }
 
 // NewDataPacket creates a new RTP packet suitable for use with the standard output stream.
@@ -436,7 +439,6 @@ func (rs *Session) ListenOnTransports() (err error) {
 // Delegating is not yet implemented. Applications receive data via the DataReceiveChan.
 //
 func (rs *Session) OnRecvData(rp *DataPacket) bool {
-
 	if !rp.IsValid() {
 		select {
 		case rs.invalidDataReceiveChan <- rp: // forwarded packet, that's all folks
@@ -462,6 +464,7 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 				rs.sendDataCtrlEvent(MaxNumInStreamReachedData, ssrc, 0)
 				rp.FreePacket()
 				rs.streamsMapMutex.Unlock()
+
 				return false
 			}
 			rs.streamsIn[rs.streamInIndex] = str
@@ -475,8 +478,8 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 				rs.sendDataCtrlEvent(WrongStreamStatusData, ssrc, rs.streamInIndex-1)
 				rp.FreePacket()
 				rs.streamsMapMutex.Unlock()
-				return false
 
+				return false
 			}
 			// Test if RTCP packets had been received but this is the first data packet from this source.
 			if str.DataPort == 0 {
@@ -493,6 +496,7 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 			// must be discarded due to collision or loop or invalid source
 			rs.sendDataCtrlEvent(StreamCollisionLoopData, ssrc, rs.streamInIndex-1)
 			rp.FreePacket()
+
 			return false
 		}
 	}
@@ -501,6 +505,7 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 	default:
 		rp.FreePacket() // either channel full or not created - free packet
 	}
+
 	return true
 }
 
@@ -545,29 +550,30 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 				rp.FreePacket()
 				return false
 				//ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
-			} else {
-				if !existing {
-					ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
-				}
-				str.statistics.lastRtcpSrTime = str.statistics.lastRtcpPacketTime
-				str.readSenderInfo(rp.toSenderInfo(rtcpHeaderLength + rtcpSsrcLength + offset))
-
-				ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpSR, str.Ssrc(), strIdx))
-
-				// Offset to first RR block: offset to SR + fixed Header length for SR + length of sender info
-				rrOffset := offset + rtcpHeaderLength + rtcpSsrcLength + senderInfoLen
-
-				for i := 0; i < rrCnt; i++ {
-					rr := rp.toRecvReport(rrOffset)
-					strOut, idx, exists := rs.lookupSsrcMapOut(rr.ssrc())
-					// Process Receive Reports that match own output streams (SSRC).
-					if exists {
-						strOut.readRecvReport(rr)
-						ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpRR, rr.ssrc(), idx))
-					}
-					rrOffset += reportBlockLen
-				}
 			}
+
+			if !existing {
+				ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
+			}
+			str.statistics.lastRtcpSrTime = str.statistics.lastRtcpPacketTime
+			str.readSenderInfo(rp.toSenderInfo(rtcpHeaderLength + rtcpSsrcLength + offset))
+
+			ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpSR, str.Ssrc(), strIdx))
+
+			// Offset to first RR block: offset to SR + fixed Header length for SR + length of sender info
+			rrOffset := offset + rtcpHeaderLength + rtcpSsrcLength + senderInfoLen
+
+			for i := 0; i < rrCnt; i++ {
+				rr := rp.toRecvReport(rrOffset)
+				strOut, idx, exists := rs.lookupSsrcMapOut(rr.ssrc())
+				// Process Receive Reports that match own output streams (SSRC).
+				if exists {
+					strOut.readRecvReport(rr)
+					ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpRR, rr.ssrc(), idx))
+				}
+				rrOffset += reportBlockLen
+			}
+
 			// Advance to the next packet in the compound.
 			offset += pktLen
 
@@ -584,25 +590,26 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 				rp.FreePacket()
 				return false
 				//ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
-			} else {
-				if !existing {
-					ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
-				}
-
-				rrCnt := rp.Count(offset)
-				// Offset to first RR block: offset to RR + fixed Header length for RR
-				rrOffset := offset + rtcpHeaderLength + rtcpSsrcLength
-				for i := 0; i < rrCnt; i++ {
-					rr := rp.toRecvReport(rrOffset)
-					strOut, idx, exists := rs.lookupSsrcMapOut(rr.ssrc())
-					// Process Receive Reports that match own output streams (SSRC)
-					if exists {
-						strOut.readRecvReport(rr)
-						ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpRR, rr.ssrc(), idx))
-					}
-					rrOffset += reportBlockLen
-				}
 			}
+
+			if !existing {
+				ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
+			}
+
+			rrCnt := rp.Count(offset)
+			// Offset to first RR block: offset to RR + fixed Header length for RR
+			rrOffset := offset + rtcpHeaderLength + rtcpSsrcLength
+			for i := 0; i < rrCnt; i++ {
+				rr := rp.toRecvReport(rrOffset)
+				strOut, idx, exists := rs.lookupSsrcMapOut(rr.ssrc())
+				// Process Receive Reports that match own output streams (SSRC)
+				if exists {
+					strOut.readRecvReport(rr)
+					ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpRR, rr.ssrc(), idx))
+				}
+				rrOffset += reportBlockLen
+			}
+
 			// Advance to the next packet in the compound.
 			offset += pktLen
 
@@ -729,7 +736,6 @@ func (rs *Session) SetEndChannel(ch TransportEnd) {
 // This functions updates some statistical values to enable RTCP processing.
 //
 func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
-
 	strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc())
 	if strOut.streamStatus != active {
 		return 0, nil
