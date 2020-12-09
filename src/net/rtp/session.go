@@ -768,7 +768,7 @@ func (rs *Session) Forward(rp *DataPacket) (n int, err error) {
 	// Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
 	for _, remote := range rs.remotes {
 		//log.Println(remote)
-		if remote.DataPort == rp.RawPacket.fromAddr.DataPort && bytes.Equal(remote.IpAddr, rp.RawPacket.fromAddr.IpAddr) {
+		if remote.DataPort == rp.RawPacket.fromAddr.DataPort && bytes.Equal(remote.IPAddr, rp.RawPacket.fromAddr.IPAddr) {
 			continue
 		}
 		//log.Println("send")
