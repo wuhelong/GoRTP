@@ -754,10 +754,11 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 
 	// Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
 	for _, remote := range rs.remotes {
-		_, err := rs.transportWrite.WriteDataTo(rp, remote)
+		c, err := rs.transportWrite.WriteDataTo(rp, remote)
 		if err != nil {
 			return 0, err
 		}
+		n += c
 	}
 	return n, nil
 }
@@ -772,10 +773,11 @@ func (rs *Session) Forward(rp *DataPacket) (n int, err error) {
 			continue
 		}
 		//log.Println("send")
-		_, err := rs.transportWrite.WriteDataTo(rp, remote)
+		c, err := rs.transportWrite.WriteDataTo(rp, remote)
 		if err != nil {
 			return 0, err
 		}
+		n += c
 	}
 	return n, nil
 }
