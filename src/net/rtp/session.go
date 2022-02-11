@@ -23,7 +23,6 @@ package rtp
  */
 
 import (
-	"bytes"
 	"net"
 	"sync"
 	"time"
@@ -763,23 +762,24 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 	return n, nil
 }
 
-func (rs *Session) Forward(rp *DataPacket) (n int, err error) {
+func (rs *Session) Forward(rp *DataPacket) (n int, p int, err error) {
 	rs.weSent = true
 	//log.Println("Forward")
 	// Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
 	for _, remote := range rs.remotes {
 		//log.Println(remote)
-		if remote.DataPort == rp.RawPacket.fromAddr.DataPort && bytes.Equal(remote.IPAddr, rp.RawPacket.fromAddr.IPAddr) {
+		if remote.DataPort == rp.RawPacket.fromAddr.DataPort && net.IP.Equal(remote.IPAddr, rp.RawPacket.fromAddr.IPAddr) {
 			continue
 		}
 		//log.Println("send")
 		c, err := rs.transportWrite.WriteDataTo(rp, remote)
 		if err != nil {
-			return 0, err
+			return n, p, err
 		}
 		n += c
+		p += 1
 	}
-	return n, nil
+	return n, p, nil
 }
 
 // WriteCtrl implements the rtp.TransportWrite WriteCtrl method and sends an RTCP packet.
