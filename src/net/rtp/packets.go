@@ -130,6 +130,15 @@ type DataPacket struct {
 
 var freeListRtp = make(chan *DataPacket, freeListLengthRtp)
 
+// Create a self-managed data packet with a buffer of specified length.
+func NewFreeDataPacket(length int) (rp *DataPacket) {
+	rp = new(DataPacket)
+	rp.buffer = make([]byte, length)
+	rp.inUse = length
+	rp.isFree = true
+	return
+}
+
 func newDataPacket() (rp *DataPacket) {
 	// Grab a packet if available; allocate if not.
 	select {
@@ -328,8 +337,8 @@ func (rp *DataPacket) Marker() bool {
 // RTP packet to a multiple of 4, otherwise the given value is used which must be
 // greater than 1.
 //
-//     NOTE: padding is only done when adding payload to the packet, thus if an application
-//           required padding then seeting the payload should be the last step in RTP packet creation
+//	NOTE: padding is only done when adding payload to the packet, thus if an application
+//	      required padding then seeting the payload should be the last step in RTP packet creation
 func (rp *DataPacket) SetPadding(p bool, padTo int) {
 	if padTo == 0 {
 		padTo = padToMultipleOf
@@ -372,7 +381,7 @@ func (rp *DataPacket) Sequence() uint16 {
 
 // PayloadType return the payload type value from RTP packet header.
 func (rp *DataPacket) FromAddr() Address {
-    return rp.RawPacket.fromAddr
+	return rp.RawPacket.fromAddr
 }
 
 // ExtensionBit returns true if the Extension bit is set in the header, false otherwise.
